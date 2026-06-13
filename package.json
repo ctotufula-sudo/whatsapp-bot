@@ -1,0 +1,28 @@
+{
+  "name": "whatsapp-group-bot",
+  "version": "1.0.0",
+  "description": "Production-ready WhatsApp group automation bot with scheduled messages",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop whatsapp-bot",
+    "pm2:restart": "pm2 restart whatsapp-bot",
+    "pm2:logs": "pm2 logs whatsapp-bot"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "whatsapp",
+    "automation",
+    "cron",
+    "whatsapp-web.js"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0"
+  }
+}

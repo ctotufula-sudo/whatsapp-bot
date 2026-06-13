@@ -1,0 +1,7 @@
+node_modules/
+sessions/
+logs/*.log
+group-cache.json
+.wwebjs_cache/
+.wwebjs_auth/
+*.log
