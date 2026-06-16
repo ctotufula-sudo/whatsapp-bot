@@ -460,6 +460,7 @@ function createClient() {
     }),
     puppeteer: getPuppeteerConfig(),
     restartOnAuthFail: true,
+    authTimeoutMs: 0,
   });
 }
 
@@ -591,6 +592,10 @@ async function main() {
   process.on('unhandledRejection', (reason) => {
     const message = reason instanceof Error ? reason.message : String(reason);
     logError('Unhandled promise rejection', { error: message });
+
+    if (message.toLowerCase().includes('auth timeout') && !isShuttingDown) {
+      scheduleReconnect('auth_timeout');
+    }
   });
 
   logInfo('WhatsApp Group Automation Bot starting...');
