@@ -481,16 +481,6 @@ function getPuppeteerConfig() {
     '--disable-accelerated-2d-canvas',
     '--no-first-run',
     '--disable-gpu',
-    '--disable-software-rasterizer',
-    '--disable-extensions',
-    '--disable-background-networking',
-    '--disable-default-apps',
-    '--disable-sync',
-    '--disable-translate',
-    '--hide-scrollbars',
-    '--metrics-recording-only',
-    '--mute-audio',
-    '--no-default-browser-check',
   ];
 
   if (isLinux) {
@@ -500,7 +490,6 @@ function getPuppeteerConfig() {
   const config = {
     headless: true,
     args,
-    protocolTimeout: 300000,
   };
 
   if (executablePath) {
@@ -524,13 +513,6 @@ function createClient() {
     puppeteer: getPuppeteerConfig(),
     restartOnAuthFail: true,
     authTimeoutMs: 0,
-    takeoverOnConflict: true,
-    takeoverTimeoutMs: 0,
-    webVersionCache: {
-      type: 'remote',
-      remotePath:
-        'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1028065277.html',
-    },
   });
 }
 

@@ -8,7 +8,7 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '500M',
+      max_memory_restart: '900M',
       env: {
         NODE_ENV: 'production',
       },
@@ -16,7 +16,8 @@ module.exports = {
       out_file: './logs/pm2-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      kill_timeout: 10000,
+      kill_timeout: 30000,
+      restart_delay: 10000,
     },
   ],
 };
