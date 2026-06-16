@@ -4,6 +4,7 @@ module.exports = {
       name: 'whatsapp-bot',
       script: 'bot.js',
       cwd: __dirname,
+      exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       watch: false,
