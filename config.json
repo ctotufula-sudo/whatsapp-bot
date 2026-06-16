@@ -1,19 +1,31 @@
 {
-  "groupName": "TUFULA Team",
   "timezone": "Asia/Kolkata",
-  "message": "Good Morning Team! This is an automated daily update.",
-  "schedule": [
-    "0 10 * * *",
-    "15 18 * * *"
-  ],
-  "messages": [
+  "groups": [
     {
-      "cron": "0 10 * * *",
-      "text": "⚠️ Attention everyone!\n\nPlease do not forget to mark your attendance. Make sure to check in during the morning and check out before leaving in the evening. Please take care of both."
+      "groupName": "TUFULA Team",
+      "messages": [
+        {
+          "cron": "0 10 * * *",
+          "text": "⚠️ Attention everyone!\n\nPlease do not forget to mark your attendance. Make sure to check in during the morning and check out before leaving in the evening. Please take care of both."
+        },
+        {
+          "cron": "15 18 * * *",
+          "text": "⚠️ Attention everyone!\n\nPlease do not forget to mark your attendance. Make sure to check in during the morning and check out before leaving in the evening.\n\nAlso, please make sure to fill out the Daily Work Report Sheet before leaving."
+        }
+      ]
     },
     {
-      "cron": "15 18 * * *",
-      "text": "⚠️ Attention everyone!\n\nPlease do not forget to mark your attendance. Make sure to check in during the morning and check out before leaving in the evening.\n\nAlso, please make sure to fill out the Daily Work Report Sheet before leaving."
+      "groupName": "Triton Store",
+      "messages": [
+        {
+          "cron": "0 10 * * *",
+          "text": "⚠️ Attention everyone!\n\nPlease do not forget to mark your attendance. Make sure to check in during the morning and check out before leaving in the evening. Please take care of both."
+        },
+        {
+          "cron": "15 18 * * *",
+          "text": "⚠️ Attention everyone!\n\nPlease do not forget to mark your attendance."
+        }
+      ]
     }
   ],
   "retry": {

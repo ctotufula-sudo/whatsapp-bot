@@ -74,89 +74,128 @@ function loadConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const config = JSON.parse(raw);
 
-  if (!config.groupName && !config.phoneNumber) {
-    throw new Error('config.json must include "groupName" or "phoneNumber"');
-  }
-
-  if (config.groupName && typeof config.groupName !== 'string') {
-    throw new Error('config.json "groupName" must be a string');
-  }
-
-  if (config.phoneNumber && typeof config.phoneNumber !== 'string') {
-    throw new Error('config.json "phoneNumber" must be a string');
-  }
-
   if (!config.timezone || typeof config.timezone !== 'string') {
     throw new Error('config.json must include a valid "timezone" string');
   }
 
-  const scheduledMessages = buildScheduledMessages(config);
+  const groupTargets = buildGroupTargets(config);
 
-  if (scheduledMessages.length === 0) {
-    throw new Error(
-      'No scheduled messages found. Provide "messages" array or "message" + "schedule" in config.json'
-    );
+  if (groupTargets.length === 0) {
+    throw new Error('No groups configured. Add a "groups" array or legacy groupName/messages config.');
   }
 
-  for (const entry of scheduledMessages) {
-    if (!cron.validate(entry.cron)) {
-      throw new Error(`Invalid cron expression: "${entry.cron}"`);
+  const scheduledCrons = new Set();
+
+  for (const group of groupTargets) {
+    for (const entry of group.messages) {
+      if (!cron.validate(entry.cron)) {
+        throw new Error(`Invalid cron expression: "${entry.cron}"`);
+      }
+      scheduledCrons.add(entry.cron);
     }
   }
 
   return {
     ...config,
     retry: { ...DEFAULT_RETRY, ...(config.retry || {}) },
-    scheduledMessages,
+    groupTargets,
+    scheduledCrons: [...scheduledCrons],
   };
 }
 
-function buildScheduledMessages(config) {
-  if (Array.isArray(config.messages) && config.messages.length > 0) {
-    return config.messages.map((item, index) => {
+function buildGroupMessages(groupConfig, indexLabel) {
+  if (Array.isArray(groupConfig.messages) && groupConfig.messages.length > 0) {
+    return groupConfig.messages.map((item, index) => {
       if (!item.cron || !item.text) {
-        throw new Error(`messages[${index}] must include both "cron" and "text"`);
+        throw new Error(`${indexLabel} messages[${index}] must include both "cron" and "text"`);
       }
       return { cron: item.cron, text: item.text };
     });
   }
 
-  if (!config.message || typeof config.message !== 'string') {
-    throw new Error('config.json must include "message" or "messages"');
+  if (!groupConfig.message || typeof groupConfig.message !== 'string') {
+    throw new Error(`${indexLabel} must include "messages" or "message" + "schedule"`);
   }
 
-  if (!Array.isArray(config.schedule) || config.schedule.length === 0) {
-    throw new Error('config.json must include a non-empty "schedule" array');
+  if (!Array.isArray(groupConfig.schedule) || groupConfig.schedule.length === 0) {
+    throw new Error(`${indexLabel} must include a non-empty "schedule" array`);
   }
 
-  return config.schedule.map((cronExpr) => ({
+  return groupConfig.schedule.map((cronExpr) => ({
     cron: cronExpr,
-    text: config.message,
+    text: groupConfig.message,
   }));
 }
 
-function saveGroupCache(group) {
-  const payload = {
-    groupId: group.id._serialized,
-    groupName: group.name,
-    savedAt: timestamp(),
-  };
+function buildGroupTargets(config) {
+  if (Array.isArray(config.groups) && config.groups.length > 0) {
+    return config.groups.map((group, index) => {
+      const indexLabel = `groups[${index}]`;
 
-  fs.writeFileSync(GROUP_CACHE_PATH, JSON.stringify(payload, null, 2), 'utf8');
-  logInfo('Group ID cached', payload);
+      if (!group.groupName && !group.phoneNumber) {
+        throw new Error(`${indexLabel} must include "groupName" or "phoneNumber"`);
+      }
+
+      return {
+        groupName: group.groupName,
+        phoneNumber: group.phoneNumber,
+        countryCode: group.countryCode,
+        messages: buildGroupMessages(group, indexLabel),
+      };
+    });
+  }
+
+  if (!config.groupName && !config.phoneNumber) {
+    throw new Error('config.json must include "groups" or "groupName"/"phoneNumber"');
+  }
+
+  return [
+    {
+      groupName: config.groupName,
+      phoneNumber: config.phoneNumber,
+      countryCode: config.countryCode,
+      messages: buildGroupMessages(config, 'config'),
+    },
+  ];
 }
 
-function readGroupCache() {
+function getGroupCacheKey(groupConfig) {
+  return (groupConfig.groupName || groupConfig.phoneNumber || 'default').trim().toLowerCase();
+}
+
+function readGroupCacheMap() {
   if (!fs.existsSync(GROUP_CACHE_PATH)) {
-    return null;
+    return {};
   }
 
   try {
-    return JSON.parse(fs.readFileSync(GROUP_CACHE_PATH, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(GROUP_CACHE_PATH, 'utf8'));
+
+    if (data?.groupId) {
+      return {
+        [getGroupCacheKey({ groupName: data.groupName })]: data,
+      };
+    }
+
+    return data;
   } catch (err) {
-    logWarn('Could not read group cache, will rediscover group', { error: err.message });
-    return null;
+    logWarn('Could not read group cache, will rediscover groups', { error: err.message });
+    return {};
   }
+}
+
+function saveGroupCacheEntry(groupConfig, chat) {
+  const cacheKey = getGroupCacheKey(groupConfig);
+  const cacheMap = readGroupCacheMap();
+
+  cacheMap[cacheKey] = {
+    groupId: chat.id._serialized,
+    groupName: chat.name,
+    savedAt: timestamp(),
+  };
+
+  fs.writeFileSync(GROUP_CACHE_PATH, JSON.stringify(cacheMap, null, 2), 'utf8');
+  logInfo('Group ID cached', cacheMap[cacheKey]);
 }
 
 function sleep(ms) {
@@ -219,18 +258,18 @@ function chatMatchesPhone(chat, phoneTargets) {
   });
 }
 
-async function resolveTargetChat(config) {
+async function resolveTargetChat(groupConfig) {
   const chats = await listAllChats();
   let target = null;
 
-  if (config.groupName) {
+  if (groupConfig.groupName) {
     target = chats.find(
-      (chat) => chat.name.trim().toLowerCase() === config.groupName.trim().toLowerCase()
+      (chat) => chat.name.trim().toLowerCase() === groupConfig.groupName.trim().toLowerCase()
     );
   }
 
-  if (!target && config.phoneNumber) {
-    const phoneTargets = getPhoneSearchTargets(config);
+  if (!target && groupConfig.phoneNumber) {
+    const phoneTargets = getPhoneSearchTargets(groupConfig);
     logInfo('Searching chat by phone number', { phoneTargets });
 
     target = chats.find((chat) => chatMatchesPhone(chat, phoneTargets));
@@ -254,26 +293,28 @@ async function resolveTargetChat(config) {
 
   if (!target) {
     const availableNames = chats.map((c) => c.name);
-    logError(`Chat not found`, {
-      groupName: config.groupName || null,
-      phoneNumber: config.phoneNumber || null,
+    logError('Chat not found', {
+      groupName: groupConfig.groupName || null,
+      phoneNumber: groupConfig.phoneNumber || null,
       availableChats: availableNames,
     });
     throw new Error(
-      `Configured chat was not found. Set correct groupName or phoneNumber in config.json.`
+      `Configured chat "${groupConfig.groupName || groupConfig.phoneNumber}" was not found.`
     );
   }
 
-  saveGroupCache(target);
-  logSuccess(`Target chat resolved: "${target.name || config.groupName}"`, {
+  saveGroupCacheEntry(groupConfig, target);
+  logSuccess(`Target chat resolved: "${target.name || groupConfig.groupName}"`, {
     id: target.id._serialized,
     type: target.isGroup ? 'group' : 'contact',
   });
   return target;
 }
 
-async function getTargetChat(config) {
-  const cache = readGroupCache();
+async function getTargetChat(groupConfig) {
+  const cacheKey = getGroupCacheKey(groupConfig);
+  const cacheMap = readGroupCacheMap();
+  const cache = cacheMap[cacheKey];
 
   if (cache?.groupId) {
     try {
@@ -281,13 +322,19 @@ async function getTargetChat(config) {
       if (chat) {
         return chat;
       }
-      logWarn('Cached chat ID is invalid, rediscovering chat');
+      logWarn('Cached chat ID is invalid, rediscovering chat', { group: cacheKey });
     } catch (err) {
-      logWarn('Failed to load cached chat, rediscovering', { error: err.message });
+      logWarn('Failed to load cached chat, rediscovering', { group: cacheKey, error: err.message });
     }
   }
 
-  return resolveTargetChat(config);
+  return resolveTargetChat(groupConfig);
+}
+
+async function resolveAllGroups(groupTargets) {
+  for (const groupConfig of groupTargets) {
+    await resolveTargetChat(groupConfig);
+  }
 }
 
 async function sendMessageWithRetry(chat, text, retryConfig) {
@@ -329,30 +376,32 @@ async function handleScheduledSend(cronExpression) {
     return;
   }
 
-  const job = config.scheduledMessages.find((item) => item.cron === cronExpression);
-
-  if (!job) {
-    logError('No message configured for cron job', { cron: cronExpression });
-    return;
-  }
-
   logInfo('Scheduled job triggered', { cron: cronExpression, timezone: config.timezone });
 
-  try {
-    const chat = await getTargetChat(config);
-    const sent = await sendMessageWithRetry(chat, job.text, config.retry);
+  for (const groupConfig of config.groupTargets) {
+    const job = groupConfig.messages.find((item) => item.cron === cronExpression);
 
-    logSuccess('Message sent successfully', {
-      group: chat.name,
-      groupId: chat.id._serialized,
-      cron: cronExpression,
-      messageId: sent.id._serialized,
-    });
-  } catch (err) {
-    logError('Failed to send scheduled message', {
-      cron: cronExpression,
-      error: err.message,
-    });
+    if (!job) {
+      continue;
+    }
+
+    try {
+      const chat = await getTargetChat(groupConfig);
+      const sent = await sendMessageWithRetry(chat, job.text, config.retry);
+
+      logSuccess('Message sent successfully', {
+        group: chat.name,
+        groupId: chat.id._serialized,
+        cron: cronExpression,
+        messageId: sent.id._serialized,
+      });
+    } catch (err) {
+      logError('Failed to send scheduled message', {
+        group: groupConfig.groupName || groupConfig.phoneNumber,
+        cron: cronExpression,
+        error: err.message,
+      });
+    }
   }
 }
 
@@ -366,11 +415,11 @@ function setupCronJobs() {
 
   const config = loadConfig();
 
-  config.scheduledMessages.forEach((entry) => {
+  config.scheduledCrons.forEach((cronExpression) => {
     const task = cron.schedule(
-      entry.cron,
+      cronExpression,
       () => {
-        handleScheduledSend(entry.cron).catch((err) => {
+        handleScheduledSend(cronExpression).catch((err) => {
           logError('Unhandled error in cron handler', { error: err.message });
         });
       },
@@ -382,14 +431,22 @@ function setupCronJobs() {
 
     scheduledJobs.push(task);
 
-    logInfo('Cron job registered', {
-      cron: entry.cron,
-      timezone: config.timezone,
-      preview: entry.text.slice(0, 60).replace(/\n/g, ' '),
+    config.groupTargets.forEach((groupConfig) => {
+      const entry = groupConfig.messages.find((item) => item.cron === cronExpression);
+      if (!entry) {
+        return;
+      }
+
+      logInfo('Cron job registered', {
+        group: groupConfig.groupName || groupConfig.phoneNumber,
+        cron: cronExpression,
+        timezone: config.timezone,
+        preview: entry.text.slice(0, 60).replace(/\n/g, ' '),
+      });
     });
   });
 
-  logSuccess(`${scheduledJobs.length} cron job(s) active`);
+  logSuccess(`${scheduledJobs.length} cron job(s) active for ${config.groupTargets.length} group(s)`);
 }
 
 function getChromeExecutablePath() {
@@ -489,7 +546,7 @@ function attachClientEvents(activeClient) {
 
     try {
       const config = loadConfig();
-      await resolveTargetChat(config);
+      await resolveAllGroups(config.groupTargets);
       setupCronJobs();
     } catch (err) {
       logError('Startup group resolution failed', { error: err.message });
